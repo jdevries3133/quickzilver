@@ -115,7 +115,7 @@ const ChunkParserOpts = struct {
     /// The total limit of the chunk. This applies to the data in the chunk,
     /// not counting the bytes which encode the chunk size or ignored
     /// extension bytes.
-    chunk_limit: u16 = 2 << 18,
+    chunk_limit: u32 = 2 << 18,
     /// How many chunked encoding extension bytes we'll discard.
     chunk_extension_limit: u16 = 2 << 12,
     /// The hex parser can be abused by feeding zeroes forever without this
