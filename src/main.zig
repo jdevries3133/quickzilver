@@ -1,6 +1,28 @@
 const std = @import("std");
 const quickzilver = @import("quickzilver");
 
+////////////////////////////////// entrypoint /////////////////////////////////
+
+pub fn main() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const fp = try std.fs.openFileAbsolute("/Users/johndevries/repos/quickzilver/config.zon", .{});
+    const stat = try fp.stat();
+    var config_bytes = try allocator.alloc(u8, stat.size + 1);
+    _ = try fp.read(config_bytes);
+    config_bytes[stat.size] = 0;
+    const config_str = config_bytes[0..stat.size :0];
+    const conf = try parse(allocator, config_str);
+
+    _ = try list_mirrors(allocator);
+
+    std.debug.print("{d}.{d}.{d}\n", .{ conf.version_major, conf.version_minor, conf.version_patch });
+}
+
+////////////////////////////////// config /////////////////////////////////////
+
 const Config = struct {
     version_major: u8,
     version_minor: u8,
@@ -33,31 +55,11 @@ test "parse zon config file" {
     try std.testing.expectEqual(conf, Config{ .version_major = 0, .version_minor = 15, .version_patch = 2 });
 }
 
+////////////////////////////////// http proto /////////////////////////////////
 
-// fn is_hex(char: u8) bool {
-//     return switch (char) {
-//         '0'...'9' , 'a'...'f' , 'A'...'F' => true,
-//         else => false
-//     };
-// }
-//
-// test is_hex {
-//     try std.testing.expectEqual(true, is_hex('f'));
-//     try std.testing.expectEqual(false, is_hex('g'));
-//     try std.testing.expectEqual(true, is_hex('F'));
-//     try std.testing.expectEqual(false, is_hex('G'));
-//     try std.testing.expectEqual(false, is_hex('0'));
-// }
-
-const HexResult = struct {
-    value: u64,
-    end_idx: u64
-};
+const HexResult = struct { value: u64, end_idx: u64 };
 fn parse_hex_while_it_lasts(hex: []const u8) !HexResult {
-    var out: HexResult = .{
-        .value= 0,
-        .end_idx= 0
-    };
+    var out: HexResult = .{ .value = 0, .end_idx = 0 };
     var chars_read: u10 = 0;
     for (hex) |char| {
         const hexval = switch (char) {
@@ -66,7 +68,7 @@ fn parse_hex_while_it_lasts(hex: []const u8) !HexResult {
             'A'...'F' => char - 55,
             else => {
                 return out;
-            }
+            },
         };
 
         out.end_idx += 1;
@@ -103,7 +105,9 @@ test parse_hex_while_it_lasts {
 
     // Rejects abuse by zeroes.
     var buf: [1001]u8 = undefined;
-    for (&buf) |*c| { c.* = '0'; }
+    for (&buf) |*c| {
+        c.* = '0';
+    }
     try std.testing.expectError(error.Malformed, parse_hex_while_it_lasts(&buf));
 }
 
@@ -116,7 +120,7 @@ const ChunkParserOpts = struct {
     chunk_extension_limit: u16 = 2 << 12,
     /// The hex parser can be abused by feeding zeroes forever without this
     /// limit.
-    hex_size_char_limit: u16 = 2 << 9
+    hex_size_char_limit: u16 = 2 << 9,
 };
 
 /// Return the sub-slice of `body` with the chunk data excluding the trailing
@@ -187,10 +191,7 @@ fn parse_chunked_response(body: []const u8, opts: ChunkParserOpts) ![]const u8 {
 }
 
 test parse_chunked_response {
-    const test_opts: ChunkParserOpts = .{
-        .chunk_extension_limit = 16,
-        .chunk_limit = 128
-    };
+    const test_opts: ChunkParserOpts = .{ .chunk_extension_limit = 16, .chunk_limit = 128 };
 
     {
         const body: []const u8 = "02\r\nhi\r\n";
@@ -232,10 +233,7 @@ test parse_chunked_response {
 
     {
         const body: []const u8 = "5 some extension OK\r\n12345\r\n";
-        const result = try parse_chunked_response(body, .{
-            .chunk_extension_limit = 50,
-            .chunk_limit = 50
-        });
+        const result = try parse_chunked_response(body, .{ .chunk_extension_limit = 50, .chunk_limit = 50 });
         try std.testing.expectEqualStrings(result, "12345");
     }
 
@@ -245,6 +243,8 @@ test parse_chunked_response {
         try std.testing.expectError(error.NeedMoreBytes, parse_chunked_response(body, test_opts));
     }
 }
+
+////////////////////////////////// http i/o ///////////////////////////////////
 
 fn list_mirrors(alloc: std.mem.Allocator) !void { // !std.ArrayList([]const u8) {
     const mirror_registry_url = try std.Uri.parse("https://ziglang.org/download/community-mirrors.txt");
@@ -282,24 +282,6 @@ fn list_mirrors(alloc: std.mem.Allocator) !void { // !std.ArrayList([]const u8) 
 //     //     found = found || std.mem.eql(item, "https://zigmirror.meox.dev");
 //     // }
 // }
-
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    const fp = try std.fs.openFileAbsolute("/Users/johndevries/repos/quickzilver/config.zon", .{});
-    const stat = try fp.stat();
-    var config_bytes = try allocator.alloc(u8, stat.size + 1);
-    _ = try fp.read(config_bytes);
-    config_bytes[stat.size] = 0;
-    const config_str = config_bytes[0..stat.size :0];
-    const conf = try parse(allocator, config_str);
-
-    _ = try list_mirrors(allocator);
-
-    std.debug.print("{d}.{d}.{d}\n", .{ conf.version_major, conf.version_minor, conf.version_patch });
-}
 
 test "random assertion that 2 << 12 is 8 KiB" {
     try std.testing.expectEqual(8192, 2 << 12);
