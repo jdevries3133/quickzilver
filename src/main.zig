@@ -19,9 +19,8 @@ pub fn parse(alloc: std.mem.Allocator, source: [:0]const u8) !Config {
 }
 
 test "parse zon config file" {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    var dba = std.heap.DebugAllocator(.{}){};
+    const alloc = dba.allocator();
 
     const raw =
         \\.{
@@ -30,13 +29,259 @@ test "parse zon config file" {
         \\    .version_patch = 2,
         \\}
     ;
-    const conf = try parse(allocator, raw);
-    try std.testing.expectEqual(conf, Config{
-        .version_major = 0,
-        .version_minor = 15,
-        .version_patch = 2
-    });
+    const conf = try parse(alloc, raw);
+    try std.testing.expectEqual(conf, Config{ .version_major = 0, .version_minor = 15, .version_patch = 2 });
 }
+
+
+// fn is_hex(char: u8) bool {
+//     return switch (char) {
+//         '0'...'9' , 'a'...'f' , 'A'...'F' => true,
+//         else => false
+//     };
+// }
+//
+// test is_hex {
+//     try std.testing.expectEqual(true, is_hex('f'));
+//     try std.testing.expectEqual(false, is_hex('g'));
+//     try std.testing.expectEqual(true, is_hex('F'));
+//     try std.testing.expectEqual(false, is_hex('G'));
+//     try std.testing.expectEqual(false, is_hex('0'));
+// }
+
+const HexResult = struct {
+    value: u64,
+    end_idx: u64
+};
+fn parse_hex_while_it_lasts(hex: []const u8) !HexResult {
+    var out: HexResult = .{
+        .value= 0,
+        .end_idx= 0
+    };
+    var chars_read: u10 = 0;
+    for (hex) |char| {
+        const hexval = switch (char) {
+            '0'...'9' => char - 48,
+            'a'...'f' => char - 87,
+            'A'...'F' => char - 55,
+            else => {
+                return out;
+            }
+        };
+
+        out.end_idx += 1;
+        out.value = out.value <<| 4;
+        out.value = out.value | hexval;
+        if (out.value == std.math.maxInt(@TypeOf(out.value))) {
+            return out;
+        }
+        chars_read += 1;
+        // SAFETY: This can be screwed with by feeding in zeroes forever. We
+        // won't read more than 1,000 characters; that gives lots of room for
+        // trailing zeroes and a u64.
+        if (chars_read > 1000) {
+            return error.Malformed;
+        }
+    }
+    return out;
+}
+
+test parse_hex_while_it_lasts {
+    try std.testing.expectEqual(15, (try parse_hex_while_it_lasts("f")).value);
+    try std.testing.expectEqual(255, (try parse_hex_while_it_lasts("ff")).value);
+    try std.testing.expectEqual(170, (try parse_hex_while_it_lasts("aa")).value);
+    try std.testing.expectEqual(170, (try parse_hex_while_it_lasts("AA")).value);
+    try std.testing.expectEqual(1, (try parse_hex_while_it_lasts("01")).value);
+
+    // Stops at the first non-hex byte.
+    try std.testing.expectEqual(1, (try parse_hex_while_it_lasts("01z")).value);
+    try std.testing.expectEqual(11259375, (try parse_hex_while_it_lasts("abcdefg")).value);
+    try std.testing.expectEqual(0, (try parse_hex_while_it_lasts("zig")).value);
+
+    // Saturates to u64 max.
+    try std.testing.expectEqual(std.math.maxInt(u64), (try parse_hex_while_it_lasts("fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")).value);
+
+    // Rejects abuse by zeroes.
+    var buf: [1001]u8 = undefined;
+    for (&buf) |*c| { c.* = '0'; }
+    try std.testing.expectError(error.Malformed, parse_hex_while_it_lasts(&buf));
+}
+
+const ChunkParserOpts = struct {
+    /// The total limit of the chunk. This applies to the data in the chunk,
+    /// not counting the bytes which encode the chunk size or ignored
+    /// extension bytes.
+    chunk_limit: u16 = 2 << 18,
+    /// How many chunked encoding extension bytes we'll discard.
+    chunk_extension_limit: u16 = 2 << 12,
+    /// The hex parser can be abused by feeding zeroes forever without this
+    /// limit.
+    hex_size_char_limit: u16 = 2 << 9
+};
+
+/// Return the sub-slice of `body` with the chunk data excluding the trailing
+/// `\r\n`. Remember, the trailing `\r\n` is not in the returned slice, but we
+/// do validate it's there. Ensure that these bytes are discarded when
+/// navigating to the start of the next chunk before calling this function
+/// again to parse the next chunk.
+///
+/// Chunked encoding extensions are ignored.
+///
+/// `ChunkParserOpts` establishes limits on the chunk as a whole, and its
+/// internal pieces.
+///
+/// `error.NeedMoreBytes` is returned when the chunk size is larger than
+/// `body`. This implies that we've received the incomplete head of a stream.
+/// The caller should take more bytes from the stream, and call this function
+/// again so that we can see up until the end of the current chunk.
+///
+/// `error.Malformed` indicates that the chunk is malformed because a limit
+/// defined by `ChunkParserOpts` has been exceeded.
+fn parse_chunked_response(body: []const u8, opts: ChunkParserOpts) ![]const u8 {
+    const hex_result = try parse_hex_while_it_lasts(body);
+
+    if (hex_result.value > opts.chunk_limit) {
+        return error.Malformed;
+    }
+
+    const after_hex = body[hex_result.end_idx..];
+
+    // Read until we find `\r\n`, or until the end.
+    var ptr: u64 = 0;
+    var cr_found = false;
+    for (after_hex) |byte| {
+        if (byte == '\r') {
+            cr_found = true;
+        } else if (byte == '\n' and cr_found) {
+            break;
+        } else {
+            cr_found = false;
+        }
+        ptr += 1;
+    }
+
+    if (ptr > opts.chunk_extension_limit) {
+        return error.Malformed;
+    }
+
+    // In this case, we previously read until the end of the body without
+    // finding the `\r\n`. We need more bytes, because we did not get into the
+    // payload.
+    if (!cr_found) {
+        return error.NeedMoreBytes;
+    }
+
+    // Advance past `\n`, and do a bounds check.
+    const data_start = ptr + 1;
+    if (data_start > after_hex.len) {
+        return error.NeedMoreBytes;
+    }
+
+    const payload = after_hex[data_start..];
+
+    if (payload.len < hex_result.value + 2) {
+        return error.NeedMoreBytes;
+    }
+
+    return payload[0..hex_result.value];
+}
+
+test parse_chunked_response {
+    const test_opts: ChunkParserOpts = .{
+        .chunk_extension_limit = 16,
+        .chunk_limit = 128
+    };
+
+    {
+        const body: []const u8 = "02\r\nhi\r\n";
+        const result = try parse_chunked_response(body, test_opts);
+        try std.testing.expectEqualStrings(result, "hi");
+    }
+
+    {
+        const body: []const u8 = "02\r\nhey\r\n";
+        const result = try parse_chunked_response(body, test_opts);
+        try std.testing.expectEqualStrings(result, "he");
+    }
+
+    {
+        const body: []const u8 = "3\r\nhey\r\n";
+        const result = try parse_chunked_response(body, test_opts);
+        try std.testing.expectEqualStrings(result, "hey");
+    }
+
+    {
+        const body: []const u8 = "3 here is my life story as an http chunk extension. What do you think?!\r\nhey\r\n";
+        try std.testing.expectError(error.Malformed, parse_chunked_response(body, test_opts));
+    }
+
+    {
+        const body: []const u8 = "3 here is my life story as an http chunk extension. What do you think?!\r\nhey\r\n";
+        try std.testing.expectError(error.Malformed, parse_chunked_response(body, test_opts));
+    }
+
+    {
+        const body: []const u8 = "30000000\r\ndisrespect for chonk supreme\r\n";
+        try std.testing.expectError(error.Malformed, parse_chunked_response(body, test_opts));
+    }
+
+    {
+        const body: []const u8 = "50\r\nneeds more sauce\r\n";
+        try std.testing.expectError(error.NeedMoreBytes, parse_chunked_response(body, test_opts));
+    }
+
+    {
+        const body: []const u8 = "5 some extension OK\r\n12345\r\n";
+        const result = try parse_chunked_response(body, .{
+            .chunk_extension_limit = 50,
+            .chunk_limit = 50
+        });
+        try std.testing.expectEqualStrings(result, "12345");
+    }
+
+    {
+        // did not find the ending newline yet
+        const body: []const u8 = "5\r\n";
+        try std.testing.expectError(error.NeedMoreBytes, parse_chunked_response(body, test_opts));
+    }
+}
+
+fn list_mirrors(alloc: std.mem.Allocator) !void { // !std.ArrayList([]const u8) {
+    const mirror_registry_url = try std.Uri.parse("https://ziglang.org/download/community-mirrors.txt");
+    var client = std.http.Client{ .allocator = alloc };
+    try client.initDefaultProxies(alloc);
+
+    var req = try client.request(std.http.Method.GET, mirror_registry_url, .{});
+    try req.sendBodiless();
+    var res = try req.receiveHead(&[_]u8{});
+    const transfer_buf = try alloc.alloc(u8, 2 << 12);
+    _ = res.reader(transfer_buf);
+
+    // const response_buf_rd = std.io.fixedBufferStream(gzipped_response).reader();
+    // const decompress_buf = try alloc.alloc(u8, std.compress.flate.max_window_len);
+    // var dc = std.compress.flate.Decompress.init(response_buf_rd, std.compress.flate.Container.gzip, decompress_buf);
+    // const text_buf = try alloc.alloc(u8, 2 << 12);
+    // try dc.reader.readSliceAll(text_buf);
+    // if (!std.unicode.utf8ValidateSlice(text_buf)) {
+    //     return error.InvalidUtf8Response;
+    // }
+
+    // std.debug.print("{s}", .{gzipped_response});
+
+    // var names = std.ArrayList([]const u8);
+}
+
+// test "download list of mirrors" {
+//     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+//     defer arena.deinit();
+//     const allocator = arena.allocator();
+//
+//     try list_mirrors(allocator);
+//     // var found = false;
+//     // for (mirrors.items) |item| {
+//     //     found = found || std.mem.eql(item, "https://zigmirror.meox.dev");
+//     // }
+// }
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -50,6 +295,12 @@ pub fn main() !void {
     config_bytes[stat.size] = 0;
     const config_str = config_bytes[0..stat.size :0];
     const conf = try parse(allocator, config_str);
+
+    _ = try list_mirrors(allocator);
+
     std.debug.print("{d}.{d}.{d}\n", .{ conf.version_major, conf.version_minor, conf.version_patch });
 }
 
+test "random assertion that 2 << 12 is 8 KiB" {
+    try std.testing.expectEqual(8192, 2 << 12);
+}
