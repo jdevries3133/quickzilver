@@ -57,7 +57,11 @@ test "parse zon config file" {
 
 ////////////////////////////////// http proto /////////////////////////////////
 
-const HexResult = struct { value: u64, end_idx: u64 };
+const HexResult = struct {
+    value: u64,
+    // The position of the last hext byte in `hex`.
+    end_idx: u64,
+};
 fn parse_hex_while_it_lasts(hex: []const u8) !HexResult {
     var out: HexResult = .{ .value = 0, .end_idx = 0 };
     var chars_read: u10 = 0;
@@ -97,7 +101,9 @@ test parse_hex_while_it_lasts {
 
     // Stops at the first non-hex byte.
     try std.testing.expectEqual(1, (try parse_hex_while_it_lasts("01z")).value);
+    try std.testing.expectEqual(2, (try parse_hex_while_it_lasts("01z")).end_idx);
     try std.testing.expectEqual(11259375, (try parse_hex_while_it_lasts("abcdefg")).value);
+    try std.testing.expectEqual(6, (try parse_hex_while_it_lasts("abcdefg")).end_idx);
     try std.testing.expectEqual(0, (try parse_hex_while_it_lasts("zig")).value);
 
     // Saturates to u64 max.
@@ -123,6 +129,16 @@ const ChunkParserOpts = struct {
     hex_size_char_limit: u16 = 2 << 9,
 };
 
+const Chunk = struct {
+    /// SAFETY: this is a view into the body passed into
+    /// `parse_chunked_response`.
+    payload: []const u8,
+    // SAFETY: this points to the first byte of the next chunk; pointing one
+    // byte past the end of the range that is read during chunk parsing.
+    // It's possible that this is beyond the end of the stream read buffer.
+    next_chunk_idx: u64,
+};
+
 /// Return the sub-slice of `body` with the chunk data excluding the trailing
 /// `\r\n`. Remember, the trailing `\r\n` is not in the returned slice, but we
 /// do validate it's there. Ensure that these bytes are discarded when
@@ -140,9 +156,13 @@ const ChunkParserOpts = struct {
 /// again so that we can see up until the end of the current chunk.
 ///
 /// `error.Malformed` indicates that the chunk is malformed because a limit
-/// defined by `ChunkParserOpts` has been exceeded.
-fn parse_chunked_response(body: []const u8, opts: ChunkParserOpts) ![]const u8 {
+/// defined by `ChunkParserOpts` has been exceeded. Or, the chunk is internally
+/// inconsistent. For example, there is not a `\r\n` directly after the end of
+/// the chunk payload.
+fn parse_chunked_response(body: []const u8, opts: ChunkParserOpts) !Chunk {
+    var total_chunk_length: u64 = 0;
     const hex_result = try parse_hex_while_it_lasts(body);
+    total_chunk_length += hex_result.end_idx;
 
     if (hex_result.value > opts.chunk_limit) {
         return error.Malformed;
@@ -181,67 +201,83 @@ fn parse_chunked_response(body: []const u8, opts: ChunkParserOpts) ![]const u8 {
         return error.NeedMoreBytes;
     }
 
-    const payload = after_hex[data_start..];
+    const payload_head = after_hex[data_start..];
 
-    if (payload.len < hex_result.value + 2) {
+    // See if the payload_head slice goes all the way until the end of the
+    // payload. Otherwise, we need to keep reading.
+    if (payload_head.len < hex_result.value + 2) {
         return error.NeedMoreBytes;
     }
+    const crlf: []const u8 = "\r\n";
+    if (std.mem.eql(u8, crlf, payload_head[hex_result.end_idx .. hex_result.end_idx + 1])) {
+        return error.Malformed;
+    }
 
-    return payload[0..hex_result.value];
+    total_chunk_length += data_start + hex_result.value + 2;
+
+    return .{ .payload = payload_head[0..hex_result.value], .next_chunk_idx = total_chunk_length };
 }
 
-test parse_chunked_response {
-    const test_opts: ChunkParserOpts = .{ .chunk_extension_limit = 16, .chunk_limit = 128 };
-
+const test_opts: ChunkParserOpts = .{ .chunk_extension_limit = 16, .chunk_limit = 128 };
+test "parse basic chunks" {
     {
         const body: []const u8 = "02\r\nhi\r\n";
         const result = try parse_chunked_response(body, test_opts);
-        try std.testing.expectEqualStrings(result, "hi");
+        try std.testing.expectEqualStrings(result.payload, "hi");
+        try std.testing.expectEqual(8, result.next_chunk_idx);
     }
 
     {
-        const body: []const u8 = "02\r\nhey\r\n";
+        const body: []const u8 = "03\r\nhey\r\n";
         const result = try parse_chunked_response(body, test_opts);
-        try std.testing.expectEqualStrings(result, "he");
+        try std.testing.expectEqualStrings(result.payload, "hey");
     }
-
     {
-        const body: []const u8 = "3\r\nhey\r\n";
-        const result = try parse_chunked_response(body, test_opts);
-        try std.testing.expectEqualStrings(result, "hey");
+        const body: []const u8 = "5 some extension OK\r\n12345\r\n";
+        const result = try parse_chunked_response(body, .{ .chunk_extension_limit = 50, .chunk_limit = 50 });
+        try std.testing.expectEqualStrings(result.payload, "12345");
     }
+}
 
+test "parse incomplete chunks" {
     {
-        const body: []const u8 = "3 here is my life story as an http chunk extension. What do you think?!\r\nhey\r\n";
-        try std.testing.expectError(error.Malformed, parse_chunked_response(body, test_opts));
-    }
-
-    {
-        const body: []const u8 = "3 here is my life story as an http chunk extension. What do you think?!\r\nhey\r\n";
-        try std.testing.expectError(error.Malformed, parse_chunked_response(body, test_opts));
-    }
-
-    {
-        const body: []const u8 = "30000000\r\ndisrespect for chonk supreme\r\n";
-        try std.testing.expectError(error.Malformed, parse_chunked_response(body, test_opts));
+        // no \r\n at the end
+        const body: []const u8 = "02\r\nhey";
+        try std.testing.expectError(error.NeedMoreBytes, parse_chunked_response(body, test_opts));
     }
 
     {
         const body: []const u8 = "50\r\nneeds more sauce\r\n";
         try std.testing.expectError(error.NeedMoreBytes, parse_chunked_response(body, test_opts));
     }
-
-    {
-        const body: []const u8 = "5 some extension OK\r\n12345\r\n";
-        const result = try parse_chunked_response(body, .{ .chunk_extension_limit = 50, .chunk_limit = 50 });
-        try std.testing.expectEqualStrings(result, "12345");
-    }
-
     {
         // did not find the ending newline yet
         const body: []const u8 = "5\r\n";
         try std.testing.expectError(error.NeedMoreBytes, parse_chunked_response(body, test_opts));
     }
+}
+
+test "parse bad chunk extensions" {
+    const body: []const u8 = "3 here is my life story as an http chunk extension. What do you think?!\r\nhey\r\n";
+    try std.testing.expectError(error.Malformed, parse_chunked_response(body, test_opts));
+}
+
+test "parse chunk too big" {
+    const body: []const u8 = "30000000\r\ndisrespect for chonk supreme\r\n";
+    try std.testing.expectError(error.Malformed, parse_chunked_response(body, test_opts));
+}
+
+test "parse last chunk" {
+    const body: []const u8 = "0\r\n\r\n";
+    const result = try parse_chunked_response(body, test_opts);
+    try std.testing.expectEqual(0, result.payload.len);
+}
+
+test "parse two chunks returns only the first chunk" {
+    const body: []const u8 = "2\r\nhi\r\n3\r\nhey\r\n";
+    const result = try parse_chunked_response(body, test_opts);
+    try std.testing.expectEqualStrings("hi", result.payload);
+    try std.testing.expectEqual(7, result.next_chunk_idx);
 }
 
 ////////////////////////////////// http i/o ///////////////////////////////////
