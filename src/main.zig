@@ -11,6 +11,7 @@ pub fn main() !void {
     const fp = try std.fs.openFileAbsolute("/Users/johndevries/repos/quickzilver/config.zon", .{});
     const stat = try fp.stat();
     var config_bytes = try allocator.alloc(u8, stat.size + 1);
+    defer allocator.free(config_bytes);
     _ = try fp.read(config_bytes);
     config_bytes[stat.size] = 0;
     const config_str = config_bytes[0..stat.size :0];
@@ -285,12 +286,15 @@ test "parse two chunks returns only the first chunk" {
 fn list_mirrors(alloc: std.mem.Allocator) !void { // !std.ArrayList([]const u8) {
     const mirror_registry_url = try std.Uri.parse("https://ziglang.org/download/community-mirrors.txt");
     var client = std.http.Client{ .allocator = alloc };
+    defer client.deinit();
     try client.initDefaultProxies(alloc);
 
     var req = try client.request(std.http.Method.GET, mirror_registry_url, .{});
+    defer req.deinit();
     try req.sendBodiless();
     var res = try req.receiveHead(&[_]u8{});
     const transfer_buf = try alloc.alloc(u8, 2 << 12);
+    defer alloc.free(transfer_buf);
     _ = res.reader(transfer_buf);
 
     // const response_buf_rd = std.io.fixedBufferStream(gzipped_response).reader();
