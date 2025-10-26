@@ -112,9 +112,9 @@ test "parse zon config file" {
 ////////////////////////////////// http proto /////////////////////////////////
 
 const HexResult = struct {
-    value: u64,
+    value: u32,
     // The position of the last hext byte in `hex`.
-    end_idx: u64,
+    end_idx: u32,
 };
 fn parse_hex_while_it_lasts(hex: []const u8) !HexResult {
     var out: HexResult = .{ .value = 0, .end_idx = 0 };
@@ -138,7 +138,7 @@ fn parse_hex_while_it_lasts(hex: []const u8) !HexResult {
         chars_read += 1;
         // SAFETY: This can be screwed with by feeding in zeroes forever. We
         // won't read more than 1,000 characters; that gives lots of room for
-        // trailing zeroes and a u64.
+        // trailing zeroes and a u32.
         if (chars_read > 1000) {
             return error.Malformed;
         }
@@ -160,8 +160,8 @@ test parse_hex_while_it_lasts {
     try std.testing.expectEqual(6, (try parse_hex_while_it_lasts("abcdefg")).end_idx);
     try std.testing.expectEqual(0, (try parse_hex_while_it_lasts("zig")).value);
 
-    // Saturates to u64 max.
-    try std.testing.expectEqual(std.math.maxInt(u64), (try parse_hex_while_it_lasts("fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")).value);
+    // Saturates to u32 max.
+    try std.testing.expectEqual(std.math.maxInt(u32), (try parse_hex_while_it_lasts("fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")).value);
 
     // Rejects abuse by zeroes.
     var buf: [1001]u8 = undefined;
@@ -190,7 +190,7 @@ const Chunk = struct {
     // SAFETY: this points to the first byte of the next chunk; pointing one
     // byte past the end of the range that is read during chunk parsing.
     // It's possible that this is beyond the end of the stream read buffer.
-    next_chunk_idx: u64,
+    next_chunk_idx: u32,
 };
 
 /// Return the sub-slice of `body` with the chunk data excluding the trailing
@@ -214,7 +214,7 @@ const Chunk = struct {
 /// inconsistent. For example, there is not a `\r\n` directly after the end of
 /// the chunk payload.
 fn parse_chunked_response(body: []const u8, opts: ChunkParserOpts) !Chunk {
-    var total_chunk_length: u64 = 0;
+    var total_chunk_length: u32 = 0;
     const hex_result = try parse_hex_while_it_lasts(body);
     total_chunk_length += hex_result.end_idx;
 
@@ -225,7 +225,7 @@ fn parse_chunked_response(body: []const u8, opts: ChunkParserOpts) !Chunk {
     const after_hex = body[hex_result.end_idx..];
 
     // Read until we find `\r\n`, or until the end.
-    var ptr: u64 = 0;
+    var ptr: u32 = 0;
     var cr_found = false;
     for (after_hex) |byte| {
         if (byte == '\r') {
