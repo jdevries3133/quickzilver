@@ -332,77 +332,7 @@ fn list_mirrors(alloc: std.mem.Allocator) !std.ArrayList(u8) {
     try req.sendBodiless();
     const res = try req.receiveHead(&[_]u8{});
     dbg(@src(), "list_mirrors response header: {s}\n", .{ res.head.bytes});
-    // const transfer_buf = try alloc.alloc(u8, 2 << 12);
-    // defer alloc.free(transfer_buf);
-    // var rd = res.reader(transfer_buf);
-
-    // const gzip_response_bytes = read_blk: {
-    //     var read_buffer: [2 << 12]u8 = undefined;
-    //     var parse_buffer = std.ArrayList(u8){};
-    //     defer parse_buffer.deinit(alloc);
-    //     var gzip_response_bytes = std.ArrayList(u8){};
-    //     errdefer gzip_response_bytes.deinit(alloc);
-
-    //     dbg(@src(), "read buffer size: {d}\n", .{ read_buffer.len });
-    //     read: while (rd.readSliceAll(&read_buffer)) |_| {
-    //         dbg(@src(), "got chunk of {d} bytes\n", .{ read_buffer.len });
-    //         try parse_buffer.appendSlice(alloc, &read_buffer);
-    //         var view_to_parse = parse_buffer.items;
-    //         // This pointer is moved forward as we successfully parse chunks. At
-    //         // the end of the read loop, bytes before this index can be
-    //         // overwritten with bytes after.
-    //         var truncate_read_stream_before_idx: u32 = 0;
-    //         while (parse_chunked_response(view_to_parse, .{})) |chunk| {
-    //             dbg(@src(), "read chunk\n", .{});
-    //             try gzip_response_bytes.appendSlice(alloc, chunk.payload);
-    //             if (view_to_parse.len < chunk.next_chunk_idx) {
-    //                 // Need more bytes; we don't even have the first byte of the
-    //                 // next chunk. We should keep reading and stop parsing.
-    //                 continue :read;
-    //             } else {
-    //                 // Narrow the slice to move past the chunk we've already parsed.
-    //                 view_to_parse = view_to_parse[chunk.next_chunk_idx..];
-    //                 truncate_read_stream_before_idx += chunk.next_chunk_idx - 1;
-    //             }
-    //         } else |e| switch (e) {
-    //             error.NeedMoreBytes => { 
-    //                 dbg(@src(), "need more bytes\n", .{});
-    //                 continue :read; },
-    //             error.Malformed => {
-    //                 break :read;
-    //             }
-    //         }
-    //         @memmove(parse_buffer, parse_buffer.items[truncate_read_stream_before_idx..]);
-    //     } else |e| switch (e) {
-    //         error.ReadFailed => { return e; },
-    //         error.EndOfStream => {}
-    //     }
-    //     break :read_blk gzip_response_bytes;
-    // };
-
-    // var rd_zipped = std.io.Reader.fixed(gzip_response_bytes.items);
-    // const items = gzip_response_bytes.items;
-    // _ = items;
-    // var decompress_buf: [std.compress.flate.max_window_len]u8 = undefined;
-    // var rd_unzipped = std.compress.flate.Decompress.init(&rd_zipped, std.compress.flate.Container.gzip, &decompress_buf);
-    // const rd_buf = try alloc.alloc(u8, 2 << 12);
-    // defer alloc.free(rd_buf);
     const text = std.ArrayList(u8){};
-    // while (rd_unzipped.reader.readSliceAll(rd_buf)) {
-    //     try text.appendSlice(alloc, rd_buf);
-    // } else |err| switch (err) {
-    //     error.EndOfStream => {},
-    //     error.ReadFailed => {
-    //         const be_opt =res.bodyErr();
-    //         if (be_opt) |be| {
-    //             dbg(@src(), "HTTP body error: {t}\n", .{ be });
-    //         }
-    //         return err;
-    //     }
-    // }
-    // if (!std.unicode.utf8ValidateSlice(text.items)) {
-    //     return error.InvalidUtf8Response;
-    // }
     return text;
 }
 
