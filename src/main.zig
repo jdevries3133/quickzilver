@@ -25,10 +25,7 @@ pub fn main() !void {
 
 ////////////////////////////////// debugging //////////////////////////////////
 
-const debugPrinting: enum {
-    Enabled,
-    Disabled
-}= .Enabled;
+const debugPrinting: enum { Enabled, Disabled } = .Enabled;
 
 /// Get `loc` by calling the `@src()` builtin.
 fn dbg(comptime loc: std.builtin.SourceLocation, comptime fmt: []const u8, args: anytype) void {
@@ -43,32 +40,20 @@ fn dbg(comptime loc: std.builtin.SourceLocation, comptime fmt: []const u8, args:
         const f = loc.file;
 
         const col = loc.column;
-        var col_strbuf:  [10]u8 = undefined;
-        const col_str = std.fmt.bufPrint(&col_strbuf, "{d}", .{ col }) catch unreachable;
+        var col_strbuf: [10]u8 = undefined;
+        const col_str = std.fmt.bufPrint(&col_strbuf, "{d}", .{col}) catch unreachable;
         const ln = loc.line;
-        var ln_strbf:  [10]u8 = undefined;
-        const ln_str = std.fmt.bufPrint(&ln_strbf, "{d}", .{ ln }) catch unreachable;
+        var ln_strbf: [10]u8 = undefined;
+        const ln_str = std.fmt.bufPrint(&ln_strbf, "{d}", .{ln}) catch unreachable;
 
         const mod = loc.module;
         const func = loc.fn_name;
 
-        var fmt_buf: [f.len
-            + col_str.len
-            + ln_str.len 
-            + mod.len 
-            + func.len 
-            // \n\t
-            // count of non-template characters in the fmt string below
-            + 21
-            + fmt.len]u8 = undefined;
-        _ = std.fmt.bufPrint(&fmt_buf, "--\nsrc/{s}:{s}:{s} || {s}::{s}\n\t{s}\n--\n", .{
-            f,
-            col_str,
-            ln_str,
-            mod,
-            func,
-            fmt
-        }) catch unreachable;
+        var fmt_buf: [
+            f.len + col_str.len + ln_str.len + mod.len + func.len
+            + 21 + fmt.len
+        ]u8 = undefined;
+        _ = std.fmt.bufPrint(&fmt_buf, "--\nsrc/{s}:{s}:{s} || {s}::{s}\n\t{s}\n--\n", .{ f, col_str, ln_str, mod, func, fmt }) catch unreachable;
         const final = fmt_buf;
         break :pf final;
     };
@@ -428,5 +413,5 @@ test "download list of mirrors" {
     const allocator = arena.allocator();
 
     const text = try list_mirrors(allocator);
-    std.debug.print("{s}", .{ text.items });
+    std.debug.print("{s}", .{text.items});
 }
