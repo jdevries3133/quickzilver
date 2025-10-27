@@ -330,7 +330,20 @@ fn list_mirrors(alloc: std.mem.Allocator) !std.ArrayList(u8) {
     var req = try client.request(std.http.Method.GET, mirror_registry_url, .{});
     defer req.deinit();
     try req.sendBodiless();
-    const res = try req.receiveHead(&[_]u8{});
+    var res = try req.receiveHead(&.{});
+
+    if (std.unicode.utf8ValidateSlice(res.head.bytes)) {
+        dbg(@src(), "header {s}\n", .{ res.head.bytes });
+    }
+
+    var buf_tr: [2 << 6]u8 = undefined;
+    var buf_dc: [std.compress.flate.max_window_len]u8 = undefined;
+    var buf_rd: [2 << 6]u8 = undefined;
+    var dc: std.http.Decompress = undefined;
+    while (res.readerDecompressing(&buf_tr, &dc, &buf_dc).readSliceShort(&buf_rd)) |c| {
+        dbg(@src(), "body {s}\n", . { buf_rd[0..c] });
+    } else |e| return e;
+
     dbg(@src(), "list_mirrors response header: {s}\n", .{ res.head.bytes});
     const text = std.ArrayList(u8){};
     return text;
