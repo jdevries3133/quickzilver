@@ -31,7 +31,6 @@ pub fn main() !void {
     const conf = try parse(allocator, config_str);
 
     const list = list_mirrors(allocator);
-    defer allocator.free(list);
 
     var randint: u64 = undefined;
     try std.posix.getrandom(std.mem.asBytes(&randint));
