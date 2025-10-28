@@ -6,13 +6,13 @@ const quickzilver = @import("quickzilver");
 
 const mirror_registry_url = std.Uri.parse("https://ziglang.org/download/community-mirrors.txt") catch unreachable;
 const mirror_list_fallback =
-        \\ https://pkg.machengine.org/zig
-        \\ https://zigmirror.hryx.net/zig
-        \\ https://zig.linus.dev/zig
-        \\ https://zig.squirl.dev
-        \\ https://zig.florent.dev
-        \\ https://zig.mirror.mschae23.de/zig
-        \\ https://zigmirror.meox.dev
+    \\ https://pkg.machengine.org/zig
+    \\ https://zigmirror.hryx.net/zig
+    \\ https://zig.linus.dev/zig
+    \\ https://zig.squirl.dev
+    \\ https://zig.florent.dev
+    \\ https://zig.mirror.mschae23.de/zig
+    \\ https://zigmirror.meox.dev
 ;
 ////////////////////////////////// entrypoint /////////////////////////////////
 
@@ -30,11 +30,16 @@ pub fn main() !void {
     const config_str = config_bytes[0..stat.size :0];
     const conf = try parse(allocator, config_str);
 
-    var list = try list_mirrors(allocator);
-    defer list.deinit(allocator);
+    const list = list_mirrors(allocator);
+    defer allocator.free(list);
 
-    std.debug.print("BEGIN mirror options\n{s}END mirror options\n", .{list.items});
-    std.debug.print("Downloading version {d}.{d}.{d}\n", .{ conf.version_major, conf.version_minor, conf.version_patch });
+    var randint: u64 = undefined;
+    try std.posix.getrandom(std.mem.asBytes(&randint));
+    const randfloat: f64 = @as(f64, @floatFromInt(randint)) / @as(f64, @floatFromInt(2 << 63));
+    const choice = pick_mirror(randfloat, list);
+
+    std.debug.print("BEGIN mirror options\n{s}END mirror options\n", .{list});
+    std.debug.print("Downloading version {d}.{d}.{d} from {s}\n", .{ conf.version_major, conf.version_minor, conf.version_patch, choice });
 }
 
 ////////////////////////////////// debugging //////////////////////////////////
@@ -112,7 +117,7 @@ test "parse zon config file" {
     try std.testing.expectEqual(conf, Config{ .version_major = 0, .version_minor = 15, .version_patch = 2 });
 }
 
-////////////////////////////////// http i/o ///////////////////////////////////
+////////////////////////////////// mirror discovery ///////////////////////////
 
 fn _list_mirrors(alloc: std.mem.Allocator) ![]const u8 {
     var client = std.http.Client{ .allocator = alloc };
@@ -135,13 +140,13 @@ fn _list_mirrors(alloc: std.mem.Allocator) ![]const u8 {
     var rd = res.readerDecompressing(&buf_tr, &dc, &buf_dc);
     var text = std.ArrayList(u8){};
     while (rd.readSliceShort(&buf_rd)) |readlen| {
-        dbg(@src(), "body {s}\n", .{buf_rd[0..readlen]});
         try text.appendSlice(alloc, buf_rd[0..readlen]);
         if (readlen < buf_rd.len) {
             break;
         }
     } else |e| return e;
 
+    dbg(@src(), "got mirror list: {s}\n", .{text});
     return try text.toOwnedSlice(alloc);
 }
 
@@ -178,4 +183,38 @@ test "fallback behavior to avoid ziglang.org point of failure" {
     const alloc = a.allocator();
     const items = list_mirrors(alloc);
     try std.testing.expectEqualStrings(fallback, items);
+}
+
+fn pick_mirror(rand: f64, list: []const u8) []const u8 {
+    var line_cnt: u32 = 0;
+    for (list) |byte| {
+        if (byte == '\n') {
+            line_cnt += 1;
+        }
+    }
+    const rng_f: f64 = @floatFromInt(line_cnt);
+    const target_idx_f = rand * rng_f;
+    const idx: u32 = @intFromFloat(std.math.floor(target_idx_f));
+    var i: u32 = 0;
+    var lines = std.mem.splitSequence(u8, list, "\n");
+    while (lines.next()) |line| {
+        if (i == idx) {
+            dbg(@src(), "rand {e} causes us to pick line {d} which is {s}\n", .{ rand, idx, line });
+            return line;
+        }
+        i += 1;
+    }
+    unreachable;
+}
+
+test pick_mirror {
+    {
+        const res = pick_mirror(0.0, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n");
+        try std.testing.expectEqualStrings("0", res);
+    }
+
+    {
+        const res = pick_mirror(0.2, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n");
+        try std.testing.expectEqualStrings("2", res);
+    }
 }
