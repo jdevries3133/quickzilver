@@ -2,6 +2,18 @@ const std = @import("std");
 const builtin = @import("builtin");
 const quickzilver = @import("quickzilver");
 
+////////////////////////////////// constants //////////////////////////////////
+
+const mirror_registry_url = std.Uri.parse("https://ziglang.org/download/community-mirrors.txt") catch unreachable;
+const mirror_list_fallback =
+        \\ https://pkg.machengine.org/zig
+        \\ https://zigmirror.hryx.net/zig
+        \\ https://zig.linus.dev/zig
+        \\ https://zig.squirl.dev
+        \\ https://zig.florent.dev
+        \\ https://zig.mirror.mschae23.de/zig
+        \\ https://zigmirror.meox.dev
+;
 ////////////////////////////////// entrypoint /////////////////////////////////
 
 pub fn main() !void {
@@ -103,7 +115,6 @@ test "parse zon config file" {
 ////////////////////////////////// http i/o ///////////////////////////////////
 
 fn _list_mirrors(alloc: std.mem.Allocator) ![]const u8 {
-    const mirror_registry_url = try std.Uri.parse("https://ziglang.org/download/community-mirrors.txt");
     var client = std.http.Client{ .allocator = alloc };
     defer client.deinit();
     try client.initDefaultProxies(alloc);
@@ -138,15 +149,7 @@ const fallback = fb: {
     if (builtin.is_test) {
         break :fb "SENTINEL";
     } else {
-        break :fb 
-        \\ https://pkg.machengine.org/zig
-        \\ https://zigmirror.hryx.net/zig
-        \\ https://zig.linus.dev/zig
-        \\ https://zig.squirl.dev
-        \\ https://zig.florent.dev
-        \\ https://zig.mirror.mschae23.de/zig
-        \\ https://zigmirror.meox.dev
-        ;
+        break :fb mirror_list_fallback;
     }
 };
 
