@@ -6,13 +6,13 @@ const quickzilver = @import("quickzilver");
 
 const mirror_registry_url = std.Uri.parse("https://ziglang.org/download/community-mirrors.txt") catch unreachable;
 const mirror_list_fallback =
-    \\ https://pkg.machengine.org/zig
-    \\ https://zigmirror.hryx.net/zig
-    \\ https://zig.linus.dev/zig
-    \\ https://zig.squirl.dev
-    \\ https://zig.florent.dev
-    \\ https://zig.mirror.mschae23.de/zig
-    \\ https://zigmirror.meox.dev
+    \\https://pkg.machengine.org/zig
+    \\https://zigmirror.hryx.net/zig
+    \\https://zig.linus.dev/zig
+    \\https://zig.squirl.dev
+    \\https://zig.florent.dev
+    \\https://zig.mirror.mschae23.de/zig
+    \\https://zigmirror.meox.dev
 ;
 ////////////////////////////////// entrypoint /////////////////////////////////
 
