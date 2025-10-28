@@ -102,7 +102,7 @@ test "parse zon config file" {
 
 ////////////////////////////////// http i/o ///////////////////////////////////
 
-fn list_mirrors(alloc: std.mem.Allocator) !std.ArrayList(u8) {
+fn _list_mirrors(alloc: std.mem.Allocator) ![]const u8 {
     const mirror_registry_url = try std.Uri.parse("https://ziglang.org/download/community-mirrors.txt");
     var client = std.http.Client{ .allocator = alloc };
     defer client.deinit();
@@ -131,20 +131,48 @@ fn list_mirrors(alloc: std.mem.Allocator) !std.ArrayList(u8) {
         }
     } else |e| return e;
 
-    return text;
+    return try text.toOwnedSlice(alloc);
+}
+
+const fallback = fb: {
+    if (builtin.is_test) {
+        break :fb "SENTINEL";
+    } else {
+        break :fb 
+        \\ https://pkg.machengine.org/zig
+        \\ https://zigmirror.hryx.net/zig
+        \\ https://zig.linus.dev/zig
+        \\ https://zig.squirl.dev
+        \\ https://zig.florent.dev
+        \\ https://zig.mirror.mschae23.de/zig
+        \\ https://zigmirror.meox.dev
+        ;
+    }
+};
+
+fn list_mirrors(alloc: std.mem.Allocator) []const u8 {
+    return _list_mirrors(alloc) catch |err| {
+        dbg(@src(), "could not get mirror from net: {t}\n", .{err});
+        return fallback;
+    };
 }
 
 test "download list of mirrors" {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    var text = try list_mirrors(allocator);
-    defer text.deinit(allocator);
-    var lines = std.mem.splitSequence(u8, text.items, "\n");
+    const alloc = std.testing.allocator;
+    const text = list_mirrors(alloc);
+    defer alloc.free(text);
+    var lines = std.mem.splitSequence(u8, text, "\n");
     while (lines.next()) |line| {
         if (line.len != 0) {
             try std.testing.expectEqualStrings("https://", line[0..8]);
         }
     }
+}
+
+test "fallback behavior to avoid ziglang.org point of failure" {
+    var buf: [0]u8 = undefined;
+    var a = std.heap.FixedBufferAllocator.init(&buf);
+    const alloc = a.allocator();
+    const items = list_mirrors(alloc);
+    try std.testing.expectEqualStrings(fallback, items);
 }
