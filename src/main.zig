@@ -145,7 +145,7 @@ fn _list_mirrors(alloc: std.mem.Allocator) ![]const u8 {
         }
     } else |e| return e;
 
-    dbg(@src(), "got mirror list: {s}\n", .{text});
+    dbg(@src(), "got mirror list: {s}\n", .{text.items});
     return try text.toOwnedSlice(alloc);
 }
 
