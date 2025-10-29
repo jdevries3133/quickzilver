@@ -22,18 +22,18 @@ const test_config: TestConfig = TestConfig.All;
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    const allocator = arena.allocator();
+    const alloc = arena.allocator();
 
     const fp = try std.fs.openFileAbsolute("/Users/johndevries/repos/quickzilver/testing_config.zon", .{});
     const stat = try fp.stat();
-    var config_bytes = try allocator.alloc(u8, stat.size + 1);
-    defer allocator.free(config_bytes);
+    var config_bytes = try alloc.alloc(u8, stat.size + 1);
+    defer alloc.free(config_bytes);
     _ = try fp.read(config_bytes);
     config_bytes[stat.size] = 0;
     const config_str = config_bytes[0..stat.size :0];
-    const conf = try parse(allocator, config_str);
+    const conf = try parse(alloc, config_str);
 
-    const list = list_mirrors(allocator);
+    const list = list_mirrors(alloc);
 
     var randint: u64 = undefined;
     try std.posix.getrandom(std.mem.asBytes(&randint));
