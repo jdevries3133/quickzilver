@@ -14,6 +14,9 @@ const mirror_list_fallback =
     \\https://zig.mirror.mschae23.de/zig
     \\https://zigmirror.meox.dev
 ;
+const TestConfig = enum { All, Fast };
+const test_config: TestConfig = TestConfig.All;
+
 ////////////////////////////////// entrypoint /////////////////////////////////
 
 pub fn main() !void {
@@ -165,6 +168,9 @@ fn list_mirrors(alloc: std.mem.Allocator) []const u8 {
 }
 
 test "download list of mirrors" {
+    if (test_config == .Fast) {
+        return error.SkipZigTest;
+    }
     const alloc = std.testing.allocator;
     const text = list_mirrors(alloc);
     defer alloc.free(text);
