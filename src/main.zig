@@ -43,6 +43,9 @@ pub fn main() !void {
 
     std.debug.print("BEGIN mirror options\n{s}END mirror options\n", .{list.items});
     std.debug.print("Downloading file {s} from {s}\n", .{ conf.filename, mirror_choice });
+
+    const tarball = try download_tarball(alloc, mirror_choice, conf.filename);
+    std.debug.print("Got tarball ({d} bytes)\n", .{tarball.len});
 }
 
 test main {
@@ -138,7 +141,7 @@ fn _list_mirrors(alloc: std.mem.Allocator) ![]const u8 {
     var res = try req.receiveHead(&.{});
 
     if (std.unicode.utf8ValidateSlice(res.head.bytes)) {
-        dbg(@src(), "list_mirrors response header: {s}\n", .{res.head.bytes});
+        dbg(@src(), "response header: {s}\n", .{res.head.bytes});
     }
 
     var buf_tr: [2 << 6]u8 = undefined;
@@ -247,4 +250,58 @@ test pick_mirror {
         const res = pick_mirror(0.2, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n");
         try std.testing.expectEqualStrings("2", res);
     }
+}
+
+////////////////////////////////// tarball download ///////////////////////////
+
+/// Returns an unsafe tarball whose signature and checksum have not been
+/// verified!
+///
+/// Caller owns the returned memory.
+fn download_tarball(alloc: std.mem.Allocator, mirror_choice: []const u8, tarball_name: []const u8) ![]const u8 {
+    var client = std.http.Client{ .allocator = alloc };
+    defer client.deinit();
+    try client.initDefaultProxies(alloc);
+
+    const query_params = "?source=quickzilver";
+    const buflen: usize =
+        mirror_choice.len
+            // `/`
+        + 1 + tarball_name.len + query_params.len;
+    const buf = try alloc.alloc(u8, buflen);
+    defer alloc.free(buf);
+    const fmt_slice = try std.fmt.bufPrint(buf, "{s}/{s}{s}", .{ mirror_choice, tarball_name, query_params });
+    const uri = try std.Uri.parse(fmt_slice);
+
+    var req = try client.request(std.http.Method.GET, uri, .{});
+    defer req.deinit();
+    try req.sendBodiless();
+    var res = try req.receiveHead(&.{});
+    if (std.unicode.utf8ValidateSlice(res.head.bytes)) {
+        dbg(@src(), "response header: {s}\n", .{res.head.bytes});
+    }
+
+    var tb = std.ArrayList(u8){};
+    defer tb.deinit(alloc);
+    var rd_buf: [2 << 6]u8 = undefined;
+    var tf_buf: [2 << 6]u8 = undefined;
+    var rd = res.reader(&tf_buf);
+    while (rd.readSliceShort(&rd_buf)) |end| {
+        try tb.appendSlice(alloc, rd_buf[0..end]);
+        if (end < buf.len) {
+            break;
+        }
+    } else |e| return e;
+
+    return tb.toOwnedSlice(alloc);
+}
+
+test download_tarball {
+    if (test_config == .Fast) {
+        return error.SkipZigTest;
+    }
+    const alloc = std.testing.allocator;
+    const tb = try download_tarball(alloc, "https://zigmirror.hryx.net/zig", "zig-aarch64-macos-0.16.0-dev.747+493ad58ff.tar.xz");
+    defer alloc.free(tb);
+    try std.testing.expectEqual(51414532, tb.len);
 }

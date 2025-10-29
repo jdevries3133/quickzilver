@@ -1,6 +1,3 @@
 .{
-    .version_major = 1,
-    .version_minor = 1,
-    .version_patch = 1
+    .filename = "zig-aarch64-macos-0.16.0-dev.747+493ad58ff.tar.xz",
 }
-
