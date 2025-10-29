@@ -38,10 +38,10 @@ pub fn main() !void {
     var randint: u64 = undefined;
     try std.posix.getrandom(std.mem.asBytes(&randint));
     const randfloat: f64 = @as(f64, @floatFromInt(randint)) / @as(f64, @floatFromInt(2 << 63));
-    const choice = pick_mirror(randfloat, list);
+    const mirror_choice = pick_mirror(randfloat, list);
 
     std.debug.print("BEGIN mirror options\n{s}END mirror options\n", .{list});
-    std.debug.print("Downloading version {d}.{d}.{d} from {s}\n", .{ conf.version_major, conf.version_minor, conf.version_patch, choice });
+    std.debug.print("Downloading file {s} from {s}\n", .{ conf.filename, mirror_choice });
 }
 
 test main {
@@ -95,9 +95,8 @@ fn dbg(comptime loc: std.builtin.SourceLocation, comptime fmt: []const u8, args:
 ////////////////////////////////// config /////////////////////////////////////
 
 const Config = struct {
-    version_major: u8,
-    version_minor: u8,
-    version_patch: u8,
+    /// One of the file names listed on https://ziglang.org/download/index.json.
+    filename: []const u8,
 };
 
 fn parse(alloc: std.mem.Allocator, source: [:0]const u8) !Config {
@@ -117,13 +116,12 @@ test "parse zon config file" {
 
     const raw =
         \\.{
-        \\    .version_major = 0,
-        \\    .version_minor = 15,
-        \\    .version_patch = 2,
+        \\    .filename = "zig-aarch64-macos-0.16.0-dev.747+493ad58ff.tar.xz",
         \\}
     ;
     const conf = try parse(alloc, raw);
-    try std.testing.expectEqual(conf, Config{ .version_major = 0, .version_minor = 15, .version_patch = 2 });
+    const filename = "zig-aarch64-macos-0.16.0-dev.747+493ad58ff.tar.xz";
+    try std.testing.expectEqualDeep(conf, Config{ .filename = filename });
 }
 
 ////////////////////////////////// mirror discovery ///////////////////////////
