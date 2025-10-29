@@ -211,6 +211,9 @@ test "fallback behavior to avoid ziglang.org point of failure" {
     try std.testing.expectEqualStrings(fallback, items.items);
 }
 
+////////////////////////////////// mirror choice //////////////////////////////
+
+/// Returns a random mirror URL.
 fn pick_mirror(rand: f64, list: []const u8) []const u8 {
     std.debug.assert(rand >= 0 and rand <= 1);
     var line_cnt: u32 = 0;
