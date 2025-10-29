@@ -33,14 +33,15 @@ pub fn main() !void {
     const config_str = config_bytes[0..stat.size :0];
     const conf = try parse(alloc, config_str);
 
-    const list = list_mirrors(alloc);
+    var list = list_mirrors(alloc);
+    defer list.free();
 
     var randint: u64 = undefined;
     try std.posix.getrandom(std.mem.asBytes(&randint));
     const randfloat: f64 = @as(f64, @floatFromInt(randint)) / @as(f64, @floatFromInt(2 << 63));
-    const mirror_choice = pick_mirror(randfloat, list);
+    const mirror_choice = pick_mirror(randfloat, list.items);
 
-    std.debug.print("BEGIN mirror options\n{s}END mirror options\n", .{list});
+    std.debug.print("BEGIN mirror options\n{s}END mirror options\n", .{list.items});
     std.debug.print("Downloading file {s} from {s}\n", .{ conf.filename, mirror_choice });
 }
 
@@ -165,11 +166,25 @@ const fallback = fb: {
     }
 };
 
-fn list_mirrors(alloc: std.mem.Allocator) []const u8 {
-    return _list_mirrors(alloc) catch |err| {
+const MirrorResult = struct {
+    pub const ResultLocation = union(enum) { Static, Heap: std.mem.Allocator };
+
+    location: ResultLocation,
+    items: []const u8,
+
+    fn free(self: *MirrorResult) void {
+        switch (self.location) {
+            ResultLocation.Static => return,
+            ResultLocation.Heap => |alloc| alloc.free(self.items),
+        }
+    }
+};
+fn list_mirrors(alloc: std.mem.Allocator) MirrorResult {
+    const heap_allocated_list = _list_mirrors(alloc) catch |err| {
         dbg(@src(), "could not get mirror from net: {t}\n", .{err});
-        return fallback;
+        return .{ .location = MirrorResult.ResultLocation.Static, .items = fallback };
     };
+    return .{ .items = heap_allocated_list, .location = MirrorResult.ResultLocation{ .Heap = alloc } };
 }
 
 test "download list of mirrors" {
@@ -177,9 +192,9 @@ test "download list of mirrors" {
         return error.SkipZigTest;
     }
     const alloc = std.testing.allocator;
-    const text = list_mirrors(alloc);
-    defer alloc.free(text);
-    var lines = std.mem.splitSequence(u8, text, "\n");
+    var text = list_mirrors(alloc);
+    defer text.free();
+    var lines = std.mem.splitSequence(u8, text.items, "\n");
     while (lines.next()) |line| {
         if (line.len != 0) {
             try std.testing.expectEqualStrings("https://", line[0..8]);
@@ -191,8 +206,9 @@ test "fallback behavior to avoid ziglang.org point of failure" {
     var buf: [0]u8 = undefined;
     var a = std.heap.FixedBufferAllocator.init(&buf);
     const alloc = a.allocator();
-    const items = list_mirrors(alloc);
-    try std.testing.expectEqualStrings(fallback, items);
+    var items = list_mirrors(alloc);
+    defer items.free();
+    try std.testing.expectEqualStrings(fallback, items.items);
 }
 
 fn pick_mirror(rand: f64, list: []const u8) []const u8 {
