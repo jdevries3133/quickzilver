@@ -24,7 +24,7 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const fp = try std.fs.openFileAbsolute("/Users/johndevries/repos/quickzilver/config.zon", .{});
+    const fp = try std.fs.openFileAbsolute("/Users/johndevries/repos/quickzilver/testing_config.zon", .{});
     const stat = try fp.stat();
     var config_bytes = try allocator.alloc(u8, stat.size + 1);
     defer allocator.free(config_bytes);
@@ -42,6 +42,13 @@ pub fn main() !void {
 
     std.debug.print("BEGIN mirror options\n{s}END mirror options\n", .{list});
     std.debug.print("Downloading version {d}.{d}.{d} from {s}\n", .{ conf.version_major, conf.version_minor, conf.version_patch, choice });
+}
+
+test main {
+    if (test_config == .Fast) {
+        return error.SkipZigTest;
+    }
+    try main();
 }
 
 ////////////////////////////////// debugging //////////////////////////////////
