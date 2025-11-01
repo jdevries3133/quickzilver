@@ -52,6 +52,8 @@ test main {
     if (test_config == .Fast) {
         return error.SkipZigTest;
     }
+    const alloc = std.testing.allocator;
+    try skip_if_offline(@src(), alloc);
     try main();
 }
 
@@ -195,6 +197,7 @@ test "download list of mirrors" {
         return error.SkipZigTest;
     }
     const alloc = std.testing.allocator;
+    try skip_if_offline(@src(), alloc);
     var text = list_mirrors(alloc);
     defer text.free();
     var lines = std.mem.splitSequence(u8, text.items, "\n");
@@ -301,7 +304,23 @@ test download_tarball {
         return error.SkipZigTest;
     }
     const alloc = std.testing.allocator;
+    try skip_if_offline(@src(), alloc);
     const tb = try download_tarball(alloc, "https://zigmirror.hryx.net/zig", "zig-aarch64-macos-0.16.0-dev.747+493ad58ff.tar.xz");
     defer alloc.free(tb);
     try std.testing.expectEqual(51414532, tb.len);
+}
+
+////////////////////////////////// test utils /////////////////////////////////
+
+fn skip_if_offline(comptime loc: std.builtin.SourceLocation, alloc: std.mem.Allocator) !void {
+    const list = std.net.getAddressList(alloc, "google.com", 443) catch |e| {
+        if (e == error.UnknownHostName) {
+            dbg(loc, "Skipping test: {s}\n", .{ loc.fn_name });
+            // Not connected to the internet.
+            return error.SkipZigTest;
+        } else {
+            return e;
+        }
+    };
+    defer list.deinit();
 }
