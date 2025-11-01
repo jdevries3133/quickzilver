@@ -274,7 +274,7 @@ test download_tarball {
 fn skip_if_offline(comptime loc: std.builtin.SourceLocation, alloc: std.mem.Allocator) !void {
     const list = std.net.getAddressList(alloc, "google.com", 443) catch |e| {
         if (e == error.UnknownHostName) {
-            dbg(loc, "Skipping test: {s}\n", .{ loc.fn_name });
+            dbg(loc, "Skipping test: {s}\n", .{loc.fn_name});
             // Not connected to the internet.
             return error.SkipZigTest;
         } else {
