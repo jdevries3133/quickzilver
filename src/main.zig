@@ -269,6 +269,63 @@ test download_tarball {
     try std.testing.expectEqual(51414532, tb.len);
 }
 
+////////////////////////////////// validation /////////////////////////////////
+
+/// When a keypair is generated using minisign, `pk` will be in their [public
+/// key format](https://jedisct1.github.io/minisign/#public-key-format).
+/// However, ziglang.org just lists the plain base64-encoded public key. Also,
+/// we're hard-coding their current key here in our tool. The tool will break
+/// if this key changes or ever needs to be input in a different way and that's
+/// OK for now. Anyway, all this is to say that `pk` is the raw base64 encoded
+/// public key as listed on [zig's official download
+/// page](https://ziglang.org/download/).
+///
+/// `sig`, on the other hand, is the full signature file according to the
+/// [minisign spec](https://jedisct1.github.io/minisign/#signature-format).
+/// We'll validate the signature for the payload as well as the trusted comment.
+///
+/// `filename` is the same filename passed as a top-level input to quickzilver.
+/// By convention, the `sig` trusted comment has two key-value pairs by
+/// default: (1) timestamp, and (2) name of the file being validated. The file
+/// name is useful to us as an extra source of validation. The user inputs the
+/// filename they'd like to download as a top-level input to quickzilver. In
+/// the validation step, we can check not only that the signature is valid with
+/// zsf's public key, but also that the filename in the signature file trusted
+/// comment is the same as the filename that the user intends to download.
+fn validate(
+    alloc: std.mem.Allocator,
+    pk: []const u8,
+    // sig
+    _: []const u8,
+    // filename
+    _: []const u8,
+    // payload
+    _: []const u8,
+) !void {
+    var pkbuf = try alloc.alloc(u8, try std.base64.standard.Decoder.calcSizeForSlice(pk));
+    defer alloc.free(pkbuf);
+
+    try std.base64.standard.Decoder.decode(pkbuf, pk);
+    // The first 2 bytes indicate the algorithm, they should be "Ed."
+    std.debug.assert(std.mem.eql(u8, pkbuf[0..2], "Ed"));
+    // The next 8 are the key serial number, which we don't care about.
+    // Bytes 10 => 42 are the 32-byte public key.
+    const pk_ = try std.crypto.sign.Ed25519.PublicKey.fromBytes(pkbuf[10..42].*);
+    dbg(@src(), "pk bytes {x}\n", .{pk_.bytes});
+}
+
+test "validate a valid signature" {
+    const payload = "test\n";
+    const pubkey = "RWSnFCZjmRSVdLYB4FH1pyBJ7leB6QAse6ckCkD0j2Kym2WyzGNz0sbw";
+    const sig =
+        \\untrusted comment: signature from minisign secret key
+        \\RUSnFCZjmRSVdDXq7rg0nAmb7lyUbMoxtjhb8bycmuha1Oxo27dDLJT2DuoFyWugKlIiVAXGLvPgy0MYQGjMKFJiMKL9Ogbh9QY=
+        \\trusted comment: timestamp:1762030250 file:test hashed
+        \\RSxZbFs9uoFfRwnlzZhENgxiV6zNvHAO5XxqrK2M/KS7dyDqFHDF/vBVK5LrbKVDeOHB3bCNEy6fnma9fbnbDQ==
+    ;
+    try validate(std.testing.allocator, pubkey, sig, "test", payload);
+}
+
 ////////////////////////////////// test utils /////////////////////////////////
 
 fn skip_if_offline(comptime loc: std.builtin.SourceLocation, alloc: std.mem.Allocator) !void {
@@ -324,4 +381,3 @@ fn dbg(comptime loc: std.builtin.SourceLocation, comptime fmt: []const u8, args:
     };
     std.debug.print(&prefixed_fmt, args);
 }
-
