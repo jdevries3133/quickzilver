@@ -89,9 +89,9 @@ fn dbg(comptime loc: std.builtin.SourceLocation, comptime fmt: []const u8, args:
         const func = loc.fn_name;
 
         var fmt_buf: [
-            f.len + col_str.len + ln_str.len + mod.len + func.len + 21 + fmt.len
+            f.len + col_str.len + ln_str.len + mod.len + func.len + 14 + fmt.len
         ]u8 = undefined;
-        _ = std.fmt.bufPrint(&fmt_buf, "--\nsrc/{s}:{s}:{s} || {s}::{s}\n\t{s}\n--\n", .{ f, ln_str, col_str, mod, func, fmt }) catch unreachable;
+        _ = std.fmt.bufPrint(&fmt_buf, "src/{s}:{s}:{s} || {s}::{s}\t{s}\n", .{ f, ln_str, col_str, mod, func, fmt }) catch unreachable;
         const final = fmt_buf;
         break :pf final;
     };
