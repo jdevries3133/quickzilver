@@ -298,8 +298,7 @@ fn validate(
     alloc: std.mem.Allocator,
     pk: []const u8,
     sig: []const u8,
-    // filename
-    _: []const u8,
+    filename: []const u8,
     // payload
     _: []const u8,
 ) !void {
@@ -352,22 +351,58 @@ fn validate(
     const global_sig_bytes = try decode(alloc, global_sig);
     defer alloc.free(global_sig_bytes);
     std.debug.assert(global_sig_bytes.len == 64);
-    const std_sig = std.crypto.sign.Ed25519.Signature.fromBytes(global_sig_bytes[0..64].*);
-    try std_sig.verify(global, std_pk);
+    const std_global_sig = std.crypto.sign.Ed25519.Signature.fromBytes(global_sig_bytes[0..64].*);
+    try std_global_sig.verify(global, std_pk);
+
+    // Verify that `filename` matches the filename in the trusted comment.
+    var kv_pairs = std.mem.tokenizeAny(u8, trusted_comment_body, &[_]u8 { ' ', '\t' });
+    const fn_found: bool = filename: while (kv_pairs.next()) |pair| {
+        var kvi = std.mem.tokenizeScalar(u8, pair, ':');
+        const key = kvi.next() orelse continue;
+        const val = kvi.next() orelse continue;
+        dbg(@src(), "kv: {s}, key: {s}, pair: {s}\n", .{pair, key, val});
+        if (!std.mem.eql(u8, "file", key)) {
+            continue;
+        }
+        if (std.mem.eql(u8, filename, val)) {
+            break :filename true;
+        } else {
+            return error.WrongFileName;
+        }
+    } else {
+        break :filename false;
+    };
+    if (!fn_found) {
+        return error.FileNameMissing;
+    }
 }
 
 test "validate a valid signature" {
     const payload = "test\n";
     const pubkey = "RWSL91HT7deJlk5K4d68epTe8XJ8ZCitYye7UNe1KilCnBACefdJoctp";
-    const sig = @embedFile("./test_valid.minisig");
-    try validate(std.testing.allocator, pubkey, sig, "test", payload);
+    const sig = @embedFile("./fixtures/test_valid.minisig");
+    try validate(std.testing.allocator, pubkey, sig, "file", payload);
 }
 
 test "validate fails on invalid global signature" {
     const payload = "test\n";
     const pubkey = "RWSL91HT7deJlk5K4d68epTe8XJ8ZCitYye7UNe1KilCnBACefdJoctp";
-    const sig = @embedFile("./test_invalid_global_sig.minisig");
+    const sig = @embedFile("./fixtures/test_invalid_global_sig.minisig");
     try std.testing.expectError(error.SignatureVerificationFailed, validate(std.testing.allocator, pubkey, sig, "test", payload));
+}
+
+test "validate fails when file name does not match" {
+    const payload = "test\n";
+    const pubkey = "RWSL91HT7deJlk5K4d68epTe8XJ8ZCitYye7UNe1KilCnBACefdJoctp";
+    const sig = @embedFile("./fixtures/test_valid.minisig");
+    try std.testing.expectError(error.WrongFileName, validate(std.testing.allocator, pubkey, sig, "fowl", payload));
+}
+
+test "validate fails when signature file has no filename" {
+    const payload = "test\n";
+    const pubkey = "RWSL91HT7deJlk5K4d68epTe8XJ8ZCitYye7UNe1KilCnBACefdJoctp";
+    const sig = @embedFile("./fixtures/test_missing.minisig");
+    try std.testing.expectError(error.FileNameMissing, validate(std.testing.allocator, pubkey, sig, "fowl", payload));
 }
 
 ////////////////////////////////// test utils /////////////////////////////////
