@@ -161,7 +161,7 @@ test "download list of mirrors" {
     try skip_if_offline(@src(), alloc);
     var text = list_mirrors(alloc);
     defer text.free();
-    var lines = std.mem.splitSequence(u8, text.items, "\n");
+    var lines = std.mem.tokenizeScalar(u8, text.items, '\n');
     while (lines.next()) |line| {
         if (line.len != 0) {
             try std.testing.expectEqualStrings("https://", line[0..8]);
@@ -193,7 +193,7 @@ fn pick_mirror(rand: f64, list: []const u8) []const u8 {
     const target_idx_f = rand * rng_f;
     const idx: u32 = @intFromFloat(std.math.floor(target_idx_f));
     var i: u32 = 0;
-    var lines = std.mem.splitSequence(u8, list, "\n");
+    var lines = std.mem.tokenizeScalar(u8, list, '\n');
     while (lines.next()) |line| {
         if (i == idx) {
             dbg(@src(), "rand {e} causes us to pick line {d} which is {s}\n", .{ rand, idx, line });
