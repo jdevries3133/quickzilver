@@ -14,6 +14,8 @@ const mirror_list_fallback =
     \\https://zig.mirror.mschae23.de/zig
     \\https://zigmirror.meox.dev
 ;
+
+const zsf_release_public_key = "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U";
 const TestConfig = enum { All, Fast };
 const test_config: TestConfig = TestConfig.All;
 
