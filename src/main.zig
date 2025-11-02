@@ -299,8 +299,7 @@ fn validate(
     pk: []const u8,
     sig: []const u8,
     filename: []const u8,
-    // payload
-    _: []const u8,
+    payload: []const u8,
 ) !void {
     const pk_bin = try decode(alloc, pk);
     defer alloc.free(pk_bin);
@@ -375,6 +374,15 @@ fn validate(
     if (!fn_found) {
         return error.FileNameMissing;
     }
+
+    // Validate the signature
+    var digest: [64]u8 = undefined;
+    var hash = std.crypto.hash.blake2.Blake2b512.init(.{});
+    hash.update(payload);
+    hash.final(&digest);
+
+    dbg(@src(), "Blake2b-512 of tarball: {x}\n", .{digest});
+
 }
 
 test "validate a valid signature" {
