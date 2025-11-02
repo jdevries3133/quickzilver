@@ -295,34 +295,69 @@ test download_tarball {
 fn validate(
     alloc: std.mem.Allocator,
     pk: []const u8,
-    // sig
-    _: []const u8,
+    sig: []const u8,
     // filename
     _: []const u8,
     // payload
     _: []const u8,
 ) !void {
-    var pkbuf = try alloc.alloc(u8, try std.base64.standard.Decoder.calcSizeForSlice(pk));
-    defer alloc.free(pkbuf);
+    const pk_bin = try decode(alloc, pk);
+    defer alloc.free(pk_bin);
 
-    try std.base64.standard.Decoder.decode(pkbuf, pk);
+    try std.base64.standard.Decoder.decode(pk_bin, pk);
     // The first 2 bytes indicate the algorithm, they should be "Ed."
-    std.debug.assert(std.mem.eql(u8, pkbuf[0..2], "Ed"));
+    std.debug.assert(std.mem.eql(u8, pk_bin[0..2], "Ed"));
     // The next 8 are the key serial number, which we don't care about.
     // Bytes 10 => 42 are the 32-byte public key.
-    const pk_ = try std.crypto.sign.Ed25519.PublicKey.fromBytes(pkbuf[10..42].*);
+    const pk_ = try std.crypto.sign.Ed25519.PublicKey.fromBytes(pk_bin[10..42].*);
     dbg(@src(), "pk bytes {x}\n", .{pk_.bytes});
+
+    // Extract each of the 4 lines from the signature file.
+    var lines = std.mem.tokenizeScalar(u8, sig, '\n');
+    // discard untrusted comment
+    _ = lines.next() orelse return error.MalformedSignature;
+    const signature = lines.next() orelse return error.MalformedSignature;
+    const sig_bytes = try decode(alloc, signature);
+    defer alloc.free(sig_bytes);
+    const trusted_comment_line = lines.next() orelse return error.MalformedSignature;
+    // The global signature is a sign of the signature and trusted comment
+    // concatenated together.
+    const global_sig = lines.next() orelse return error.MalformedSignature;
+
+    // Extract trusted comment body from the line, which has a prefix.
+    const trusted_comment_prefix = "trusted comment: ";
+    std.debug.assert(std.mem.eql(u8, trusted_comment_line[0..trusted_comment_prefix.len], trusted_comment_prefix));
+    const trusted_comment_body = trusted_comment_line[trusted_comment_prefix.len..];
+    dbg(@src(), "trusted comment body: {s}\n", .{trusted_comment_body});
+
+    // The first 10 bytes are the signature algorithm (2 bytes) and public key
+    // serial number (8 bytes), but only the 64-bit signature itself goes into
+    // the global context.
+    const sig_offset = 10;
+    const sig_len = 64;
+
+    // Construct the global context, against which the global_signature was
+    // made to prepare to verify it.
+    var global = try alloc.alloc(u8, sig_len + trusted_comment_body.len);
+    defer alloc.free(global);
+
+    @memcpy(global[0..sig_len], sig_bytes[sig_offset .. sig_offset + sig_len]);
+    @memcpy(global[sig_len..], trusted_comment_body);
+    dbg(@src(), "global ctx: {x}\n", .{global});
+
+    // Verify the global signature signs the global context using the public
+    // key.
+    const global_sig_bytes = try decode(alloc, global_sig);
+    defer alloc.free(global_sig_bytes);
+    std.debug.assert(global_sig_bytes.len == 64);
+    const sig_ = std.crypto.sign.Ed25519.Signature.fromBytes(global_sig_bytes[0..64].*);
+    try sig_.verify(global, pk_);
 }
 
 test "validate a valid signature" {
     const payload = "test\n";
-    const pubkey = "RWSnFCZjmRSVdLYB4FH1pyBJ7leB6QAse6ckCkD0j2Kym2WyzGNz0sbw";
-    const sig =
-        \\untrusted comment: signature from minisign secret key
-        \\RUSnFCZjmRSVdDXq7rg0nAmb7lyUbMoxtjhb8bycmuha1Oxo27dDLJT2DuoFyWugKlIiVAXGLvPgy0MYQGjMKFJiMKL9Ogbh9QY=
-        \\trusted comment: timestamp:1762030250 file:test hashed
-        \\RSxZbFs9uoFfRwnlzZhENgxiV6zNvHAO5XxqrK2M/KS7dyDqFHDF/vBVK5LrbKVDeOHB3bCNEy6fnma9fbnbDQ==
-    ;
+    const pubkey = "RWSL91HT7deJlk5K4d68epTe8XJ8ZCitYye7UNe1KilCnBACefdJoctp";
+    const sig = @embedFile("./test.minisig");
     try validate(std.testing.allocator, pubkey, sig, "test", payload);
 }
 
@@ -380,4 +415,13 @@ fn dbg(comptime loc: std.builtin.SourceLocation, comptime fmt: []const u8, args:
         break :pf final;
     };
     std.debug.print(&prefixed_fmt, args);
+}
+////////////////////////////////// b64 ////////////////////////////////////////
+
+/// Caller owns returned memory.
+fn decode(alloc: std.mem.Allocator, str: []const u8) ![]u8 {
+    const bufsize = try std.base64.standard.Decoder.calcSizeForSlice(str);
+    const buf = try alloc.alloc(u8, bufsize);
+    try std.base64.standard.Decoder.decode(buf, str);
+    return buf;
 }
