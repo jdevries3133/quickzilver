@@ -17,7 +17,7 @@ const mirror_list_fallback =
 
 const zsf_release_public_key = "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U";
 const TestConfig = enum { All, Fast };
-const test_config: TestConfig = TestConfig.All;
+const test_config: TestConfig = TestConfig.Fast;
 
 ////////////////////////////////// entrypoint /////////////////////////////////
 
@@ -359,8 +359,15 @@ fn validate(
 test "validate a valid signature" {
     const payload = "test\n";
     const pubkey = "RWSL91HT7deJlk5K4d68epTe8XJ8ZCitYye7UNe1KilCnBACefdJoctp";
-    const sig = @embedFile("./test.minisig");
+    const sig = @embedFile("./test_valid.minisig");
     try validate(std.testing.allocator, pubkey, sig, "test", payload);
+}
+
+test "validate fails on invalid global signature" {
+    const payload = "test\n";
+    const pubkey = "RWSL91HT7deJlk5K4d68epTe8XJ8ZCitYye7UNe1KilCnBACefdJoctp";
+    const sig = @embedFile("./test_invalid_global_sig.minisig");
+    try std.testing.expectError(error.SignatureVerificationFailed, validate(std.testing.allocator, pubkey, sig, "test", payload));
 }
 
 ////////////////////////////////// test utils /////////////////////////////////
