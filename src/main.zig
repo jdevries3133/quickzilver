@@ -311,8 +311,8 @@ fn validate(
     std.debug.assert(std.mem.eql(u8, pk_bin[0..2], "Ed"));
     // The next 8 are the key serial number, which we don't care about.
     // Bytes 10 => 42 are the 32-byte public key.
-    const pk_ = try std.crypto.sign.Ed25519.PublicKey.fromBytes(pk_bin[10..42].*);
-    dbg(@src(), "pk bytes {x}\n", .{pk_.bytes});
+    const std_pk = try std.crypto.sign.Ed25519.PublicKey.fromBytes(pk_bin[10..42].*);
+    dbg(@src(), "pk bytes {x}\n", .{std_pk.bytes});
 
     // Extract each of the 4 lines from the signature file.
     var lines = std.mem.tokenizeScalar(u8, sig, '\n');
@@ -352,8 +352,8 @@ fn validate(
     const global_sig_bytes = try decode(alloc, global_sig);
     defer alloc.free(global_sig_bytes);
     std.debug.assert(global_sig_bytes.len == 64);
-    const sig_ = std.crypto.sign.Ed25519.Signature.fromBytes(global_sig_bytes[0..64].*);
-    try sig_.verify(global, pk_);
+    const std_sig = std.crypto.sign.Ed25519.Signature.fromBytes(global_sig_bytes[0..64].*);
+    try std_sig.verify(global, std_pk);
 }
 
 test "validate a valid signature" {
