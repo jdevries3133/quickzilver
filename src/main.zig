@@ -17,7 +17,7 @@ const mirror_list_fallback =
 
 const zsf_release_public_key = "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U";
 const TestConfig = enum { All, Fast };
-const test_config: TestConfig = TestConfig.Fast;
+const test_config: TestConfig = TestConfig.All;
 
 ////////////////////////////////// entrypoint /////////////////////////////////
 
@@ -383,6 +383,8 @@ fn validate(
 
     dbg(@src(), "Blake2b-512 of tarball: {x}\n", .{digest});
 
+    const std_sig = std.crypto.sign.Ed25519.Signature.fromBytes(sig_bytes[sig_offset..sig_offset + sig_len].*);
+    try std_sig.verify(&digest, std_pk);
 }
 
 test "validate a valid signature" {
@@ -411,6 +413,13 @@ test "validate fails when signature file has no filename" {
     const pubkey = "RWSL91HT7deJlk5K4d68epTe8XJ8ZCitYye7UNe1KilCnBACefdJoctp";
     const sig = @embedFile("./fixtures/test_missing.minisig");
     try std.testing.expectError(error.FileNameMissing, validate(std.testing.allocator, pubkey, sig, "fowl", payload));
+}
+
+test "validate fails on corrupted main signature" {
+    const payload = "test\n";
+    const pubkey = "RWSL91HT7deJlk5K4d68epTe8XJ8ZCitYye7UNe1KilCnBACefdJoctp";
+    const sig = @embedFile("./fixtures/test_invalid_sig.minisig");
+    try std.testing.expectError(error.SignatureVerificationFailed, validate(std.testing.allocator, pubkey, sig, "fowl", payload));
 }
 
 ////////////////////////////////// test utils /////////////////////////////////
