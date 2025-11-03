@@ -25,14 +25,33 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
+    const config_str = try read_input(alloc);
+    defer alloc.free(config_str);
+    const out = try core(alloc, config_str);
+    defer alloc.free(out);
+    try write_output(out);
+}
 
+
+////////////////////////////////// top-level i/o //////////////////////////////
+
+fn read_input(alloc: std.mem.Allocator) ![:0]u8 {
     const fp = try std.fs.openFileAbsolute("/Users/johndevries/repos/quickzilver/testing_config.zon", .{});
     const stat = try fp.stat();
-    var config_bytes = try alloc.alloc(u8, stat.size + 1);
-    defer alloc.free(config_bytes);
+    const config_bytes = try alloc.alloc(u8, stat.size + 1);
     _ = try fp.read(config_bytes);
     config_bytes[stat.size] = 0;
     const config_str = config_bytes[0..stat.size :0];
+    return config_str;
+}
+
+fn write_output(out: []const u8) !void {
+    _ = out;
+}
+
+////////////////////////////////// core ///////////////////////////////////////
+
+pub fn core(alloc: std.mem.Allocator, config_str: [:0]const u8) ![]const u8 {
     const conf = try parse(alloc, config_str);
 
     var list = list_mirrors(alloc);
@@ -48,9 +67,11 @@ pub fn main() !void {
 
     const tarball = try download_tarball(alloc, mirror_choice, conf.filename);
     std.debug.print("Got tarball ({d} bytes)\n", .{tarball.len});
+
+    return tarball;
 }
 
-test main {
+test core {
     if (test_config == .Fast) {
         return error.SkipZigTest;
     }
