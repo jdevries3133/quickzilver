@@ -53,6 +53,7 @@ fn write_output(out: []const u8) !void {
 
 pub fn core(alloc: std.mem.Allocator, config_str: [:0]const u8) ![]const u8 {
     const conf = try parse(alloc, config_str);
+    defer free_conf(alloc, conf);
 
     var list = list_mirrors(alloc);
     defer list.free();
@@ -87,6 +88,7 @@ const Config = struct {
     filename: []const u8,
 };
 
+const free_conf = std.zon.parse.free;
 fn parse(alloc: std.mem.Allocator, source: [:0]const u8) !Config {
     var diag: std.zon.parse.Diagnostics = .{};
     return std.zon.parse.fromSlice(Config, alloc, source, &diag, .{}) catch |err| {
@@ -108,6 +110,7 @@ test "parse zon config file" {
         \\}
     ;
     const conf = try parse(alloc, raw);
+    defer free_conf(alloc, conf);
     const filename = "zig-aarch64-macos-0.16.0-dev.747+493ad58ff.tar.xz";
     try std.testing.expectEqualDeep(conf, Config{ .filename = filename });
 }
