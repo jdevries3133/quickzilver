@@ -92,7 +92,7 @@ fn core(alloc: std.mem.Allocator, config_str: [:0]const u8) ![]const u8 {
     std.debug.print("Got sig ({d} bytes)\n", .{sig.len});
 
     try validate(alloc, zsf_release_public_key, sig, conf.filename, tarball);
-    std.debug.print("Signature validated.", .{});
+    std.debug.print("Signature validated.\n", .{});
 
     return tarball;
 }
