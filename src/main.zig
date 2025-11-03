@@ -87,7 +87,12 @@ fn core(alloc: std.mem.Allocator, config_str: [:0]const u8) ![]const u8 {
     const tarball = try download_tarball(alloc, mirror_choice, conf.filename);
     std.debug.print("Got tarball ({d} bytes)\n", .{tarball.len});
 
-    unreachable; // still need to download signature and validate
+    const sig = try download_sig(alloc, mirror_choice, conf.filename);
+    defer alloc.free(sig);
+    std.debug.print("Got sig ({d} bytes)\n", .{sig.len});
+
+    try validate(alloc, zsf_release_public_key, sig, conf.filename, tarball);
+    std.debug.print("Signature validated.", .{});
 
     return tarball;
 }
@@ -321,6 +326,54 @@ test download_tarball {
     const tb = try download_tarball(alloc, "https://zigmirror.hryx.net/zig", "zig-aarch64-macos-0.16.0-dev.747+493ad58ff.tar.xz");
     defer alloc.free(tb);
     try std.testing.expectEqual(51414532, tb.len);
+}
+
+////////////////////////////////// signature download //////////////////////////
+
+fn download_sig(alloc: std.mem.Allocator, mirror_choice: []const u8, filename: []const u8) ![]u8 {
+    var client = std.http.Client{ .allocator = alloc };
+    defer client.deinit();
+    try client.initDefaultProxies(alloc);
+
+    const delim = "/";
+    const suffix = ".minisig";
+    const query_params = "?source=quickzilver";
+    const buflen: usize =
+        mirror_choice.len + delim.len + suffix.len + filename.len + query_params.len;
+    const buf = try alloc.alloc(u8, buflen);
+    defer alloc.free(buf);
+    const fmt_slice = try std.fmt.bufPrint(buf, "{s}{s}{s}{s}{s}", .{ mirror_choice, delim, filename, suffix, query_params });
+    const uri = try std.Uri.parse(fmt_slice);
+
+    var req = try client.request(std.http.Method.GET, uri, .{});
+    defer req.deinit();
+    try req.sendBodiless();
+    var res = try req.receiveHead(&.{});
+
+    var tb = std.ArrayList(u8){};
+    defer tb.deinit(alloc);
+    var rd_buf: [2 << 6]u8 = undefined;
+    var tf_buf: [2 << 6]u8 = undefined;
+    var rd = res.reader(&tf_buf);
+    while (rd.readSliceShort(&rd_buf)) |end| {
+        try tb.appendSlice(alloc, rd_buf[0..end]);
+        if (end < buf.len) {
+            break;
+        }
+    } else |e| return e;
+
+    return tb.toOwnedSlice(alloc);
+}
+
+test download_sig {
+    if (test_config == .Fast) {
+        return error.SkipZigTest;
+    }
+    const alloc = std.testing.allocator;
+    try skip_if_offline(@src(), alloc);
+    const sig = try download_sig(alloc, "https://zigmirror.hryx.net/zig", "zig-aarch64-macos-0.16.0-dev.747+493ad58ff.tar.xz");
+    defer alloc.free(sig);
+    try std.testing.expectEqual(344, sig.len);
 }
 
 ////////////////////////////////// validation /////////////////////////////////
