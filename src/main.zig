@@ -22,6 +22,7 @@ const test_config: TestConfig = TestConfig.All;
 ////////////////////////////////// entrypoint /////////////////////////////////
 
 pub fn main() !void {
+    try init();
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -50,6 +51,14 @@ fn write_output(out: []const u8) !void {
 }
 
 ////////////////////////////////// core ///////////////////////////////////////
+
+fn init() !void {
+    // This tool prints the zig distribution tarball to STDOUT, which means
+    // we expect output to be redirected away from the terminal.
+    if (std.fs.File.stdout().isTty()) {
+        return error.StdoutIsTty;
+    }
+}
 
 pub fn core(alloc: std.mem.Allocator, config_str: [:0]const u8) ![]const u8 {
     const conf = try parse(alloc, config_str);
