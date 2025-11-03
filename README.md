@@ -5,6 +5,11 @@ A tiny tool for interacting with zig community mirrors, written in Zig!
 Implements the [pseudocode prescriptions from the Zig Software Foundation
 site](https://ziglang.org/download/community-mirrors/).
 
+# Use-Cases
+
+- downloading zig for use on your main workstation
+- downloading zig for automation, like in CI/CD environments
+
 # Features
 
 - **high availability:** use the [community mirror
@@ -41,7 +46,7 @@ const Config = struct {
 For example;
 
 ```bash
-cat <<EOF | quickzilver | unxz > output.tar
+cat <<EOF | quickzilver > output.tar.xz
 .{
   .filename = "zig-aarch64-macos-0.16.0-dev.747+493ad58ff.tar.xz",
 }
@@ -93,6 +98,9 @@ tarball to `STDOUT`. It has no CLI interface (`--help` or `--version`). To avoid
 printing the zig release binary to your terminal, `quickzilver` exits early if
 it detects that `STDOUT` is a TTY.
 
+`quickzilver` will try to fetch and use the [latest community mirror
+list](https://ziglang.org/download/community-mirrors.txt)
+
 `quickzilver` is new, written by a Zig novice, not widely used at this time, and
 has not received a security review. It probably has bugs; maybe ones that
 seriously undermine safety.
@@ -102,4 +110,13 @@ seriously undermine safety.
 The use-case I had in mind when writing `quickzilver` was for use in
 Dockerfiles, CI/CD environments, etc.
 
-[zvm](https://www.zvm.app/) is a more fully featured zig version manager.
+[zvm](https://www.zvm.app/) is a fully featured zig version manager.
+`quickzilver` has a better story around community mirrors than zvm; we'll
+automatically use a randomly selected community mirror each time whereas you
+need to [explicitly configure a
+mirror](https://www.zvm.app/reference/how-to-use/#use-a-custom-mirror-distribution-server)
+when using `zvm`.
+
+[mlugg/setup-zig](https://github.com/marketplace/actions/setup-zig-compiler) can
+be used in GitHub actions. Once again, mirror choice must be explicitly
+configured.
