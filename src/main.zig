@@ -37,15 +37,13 @@ pub fn main() !void {
 ////////////////////////////////// top-level i/o //////////////////////////////
 
 fn read_input(alloc: std.mem.Allocator) ![:0]u8 {
-    const s_buf = try alloc.alloc(u8, 2 << 9);
-    defer alloc.free(s_buf);
+    var s_buf: [2 << 9]u8 = undefined;
     const stdin = std.fs.File.stdin();
-    var rd = stdin.readerStreaming(s_buf);
-    var rd_buf = try alloc.alloc(u8, 2 << 9);
-    defer alloc.free(rd_buf);
+    var rd = stdin.readerStreaming(&s_buf);
+    var rd_buf: [2 << 9]u8 = undefined;
     var out: std.ArrayList(u8) = .{};
     defer out.deinit(alloc);
-    while (rd.read(rd_buf)) |sz| {
+    while (rd.read(&rd_buf)) |sz| {
         try out.appendSlice(alloc, rd_buf[0..sz]);
         if (sz < rd_buf.len) {
             break;
@@ -59,7 +57,7 @@ fn read_input(alloc: std.mem.Allocator) ![:0]u8 {
 }
 
 fn write_output(out: []const u8) !void {
-    _ = out;
+    try std.fs.File.stdout().writeAll(out);
 }
 
 ////////////////////////////////// core ///////////////////////////////////////
