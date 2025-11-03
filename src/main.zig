@@ -82,11 +82,12 @@ fn core(alloc: std.mem.Allocator, config_str: [:0]const u8) ![]const u8 {
     const randfloat: f64 = @as(f64, @floatFromInt(randint)) / @as(f64, @floatFromInt(2 << 63));
     const mirror_choice = pick_mirror(randfloat, list.items);
 
-    std.debug.print("BEGIN mirror options\n{s}END mirror options\n", .{list.items});
     std.debug.print("Downloading file {s} from {s}\n", .{ conf.filename, mirror_choice });
 
     const tarball = try download_tarball(alloc, mirror_choice, conf.filename);
     std.debug.print("Got tarball ({d} bytes)\n", .{tarball.len});
+
+    unreachable; // still need to download signature and validate
 
     return tarball;
 }
