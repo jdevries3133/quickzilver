@@ -37,13 +37,25 @@ pub fn main() !void {
 ////////////////////////////////// top-level i/o //////////////////////////////
 
 fn read_input(alloc: std.mem.Allocator) ![:0]u8 {
-    const fp = try std.fs.openFileAbsolute("/Users/johndevries/repos/quickzilver/testing_config.zon", .{});
-    const stat = try fp.stat();
-    const config_bytes = try alloc.alloc(u8, stat.size + 1);
-    _ = try fp.read(config_bytes);
-    config_bytes[stat.size] = 0;
-    const config_str = config_bytes[0..stat.size :0];
-    return config_str;
+    const s_buf = try alloc.alloc(u8, 2 << 9);
+    defer alloc.free(s_buf);
+    const stdin = std.fs.File.stdin();
+    var rd = stdin.readerStreaming(s_buf);
+    var rd_buf = try alloc.alloc(u8, 2 << 9);
+    defer alloc.free(rd_buf);
+    var out: std.ArrayList(u8) = .{};
+    defer out.deinit(alloc);
+    while (rd.read(rd_buf)) |sz| {
+        try out.appendSlice(alloc, rd_buf[0..sz]);
+        if (sz < rd_buf.len) {
+            break;
+        }
+    } else |e| switch (e) {
+        error.ReadFailed => { return e; },
+        error.EndOfStream => { }
+    }
+
+    return alloc.dupeZ(u8, out.items);
 }
 
 fn write_output(out: []const u8) !void {
