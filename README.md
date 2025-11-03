@@ -7,12 +7,12 @@ site](https://ziglang.org/download/community-mirrors/).
 
 # Features
 
-- **high availability**: use the [community mirror
-  network](https://ziglang.org/download/community-mirrors/) to get zig even in
-  case ziglang.org is down
-- **minisign verification**: release signatures are verified using the Zig
+- **high availability:** use the [community mirror
+  network](https://ziglang.org/download/community-mirrors/) to get zig even if
+  [ziglang.org](https://ziglang.org) is down
+- **minisign verification:** release signatures are verified using the Zig
   Software Foundation's public keys
-- **simplicity and flexibility**: simply shove the file your want to download
+- **simplicity and flexibility:** simply shove the file your want to download
   into `STDIN`, and the tarball comes out of `STDOUT`. `quickzilver` doesn't
   even have a CLI interface. Do whatever you'd like downstream with the trusted
   release tarball.
@@ -77,9 +77,7 @@ qz_sync() (
   cat ~/.config/quickzilver/conf.zon \
     | quickzilver \
     | unxz \
-    > next.tar
-  tar -xf next.tar --strip-components 1
-  rm next.tar
+    | tar -xf - --strip-components 1
 )
 ```
 
