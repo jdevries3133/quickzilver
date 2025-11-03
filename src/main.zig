@@ -60,9 +60,9 @@ fn init() !void {
     }
 }
 
-pub fn core(alloc: std.mem.Allocator, config_str: [:0]const u8) ![]const u8 {
+fn core(alloc: std.mem.Allocator, config_str: [:0]const u8) ![]const u8 {
     const conf = try parse(alloc, config_str);
-    defer free_conf(alloc, conf);
+    defer std.zon.parse.free(alloc, conf);
 
     var list = list_mirrors(alloc);
     defer list.free();
@@ -85,9 +85,18 @@ test core {
     if (test_config == .Fast) {
         return error.SkipZigTest;
     }
-    const alloc = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const conf =
+        \\.{
+        \\    .filename = "zig-aarch64-macos-0.16.0-dev.747+493ad58ff.tar.xz",
+        \\}
+    ;
     try skip_if_offline(@src(), alloc);
-    try main();
+    const tarball = try core(alloc, conf);
+    defer alloc.free(tarball);
+    try std.testing.expectEqual(51414532, tarball.len);
 }
 
 ////////////////////////////////// config /////////////////////////////////////
@@ -97,7 +106,6 @@ const Config = struct {
     filename: []const u8,
 };
 
-const free_conf = std.zon.parse.free;
 fn parse(alloc: std.mem.Allocator, source: [:0]const u8) !Config {
     var diag: std.zon.parse.Diagnostics = .{};
     return std.zon.parse.fromSlice(Config, alloc, source, &diag, .{}) catch |err| {
@@ -119,7 +127,7 @@ test "parse zon config file" {
         \\}
     ;
     const conf = try parse(alloc, raw);
-    defer free_conf(alloc, conf);
+    defer std.zon.parse.free(alloc, conf);
     const filename = "zig-aarch64-macos-0.16.0-dev.747+493ad58ff.tar.xz";
     try std.testing.expectEqualDeep(conf, Config{ .filename = filename });
 }
