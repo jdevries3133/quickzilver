@@ -99,7 +99,8 @@ printing the zig release binary to your terminal, `quickzilver` exits early if
 it detects that `STDOUT` is a TTY.
 
 `quickzilver` will try to fetch and use the [latest community mirror
-list](https://ziglang.org/download/community-mirrors.txt)
+list](https://ziglang.org/download/community-mirrors.txt), but falls back to a
+hard-coded one.
 
 `quickzilver` is new, written by a Zig novice, not widely used at this time, and
 has not received a security review. It probably has bugs; maybe ones that
@@ -108,7 +109,9 @@ seriously undermine safety.
 # Alternatives
 
 The use-case I had in mind when writing `quickzilver` was for use in
-Dockerfiles, CI/CD environments, etc.
+Dockerfiles, CI/CD environments, etc. I noticed that existing tools don't lean
+into using the community mirror network by default; that's `quickzilver`'s main
+differentiator.
 
 [zvm](https://www.zvm.app/) is a fully featured zig version manager.
 `quickzilver` has a better story around community mirrors than zvm; we'll
